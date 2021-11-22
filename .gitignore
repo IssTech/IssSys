@@ -3,6 +3,10 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+# IssTech Excluding
+env/
+temp/
+
 # C extensions
 *.so
 
