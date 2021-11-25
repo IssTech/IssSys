@@ -6,6 +6,7 @@ __pycache__/
 # IssTech Excluding
 env/
 temp/
+clean.py
 
 # C extensions
 *.so
