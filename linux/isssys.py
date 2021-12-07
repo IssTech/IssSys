@@ -202,8 +202,8 @@ class IssBot(object):
             data = json.loads(response.text)
             return(True)
         else:
-            log.error('Can not register your device. Get error code ' + str(register.status_code))
-            raise Exception('Can not register your device. Get error code ' + str(register.status_code))
+            log.error('Can not register your device. Get error code ' + str(response.status_code))
+            raise Exception('Can not register your device. Get error code ' + str(response.status_code))
 
     def device_status(self, *args, **kwargs):
         config = self.config()
@@ -230,6 +230,13 @@ class IssBot(object):
         else:
             log.error('Cannot create data at IssBot.')
             raise Exception('Cannot create data at IssBot.')
+
+    def print_token(self, *args, **kwargs):
+        print('*' * 100)
+        print('Your Access Token: ' + self.get_credentials(service_name='access_token', **kwargs))
+        print('Your Refresh Token: ' + self.get_credentials(service_name='refresh_token', **kwargs))
+        print('*' * 100)
+        return(True)
 
 class SystemUpdates(object):
     """
@@ -511,16 +518,26 @@ def main():
                         isssys_version=isssys_config['version'])
     else:
         updates = update.get_update_packages(dryrun=True)
+
+    if a.print_token:
+        if a.dry_run:
+            issbot = IssBot()
+
+        issbot.print_token(hostname=system_information['hostname'])
+
 if __name__ == '__main__':
     p = argparse.ArgumentParser(
         description='''IssSys Agent for IssBot to collect System Updates information''',
-        epilog='''Contact support@isstech.io'''
+        epilog='''Contact support@isstech.io''',
+        prog='python3 isssys.py'
     )
-    o = p.add_mutually_exclusive_group(required = False)
+    m = p.add_mutually_exclusive_group(required = False)
+    o = p.add_argument_group()
     p.add_argument("-u", "--issbot-url", default='file', help = "URL to IssBot, default is to use the configuration file")
     p.add_argument("-m", "--manager", default="auto", help="Force IssSys a specific Package Manager like 'apt' or 'yum'.")
     p.add_argument("-p", "--password", default=None, help="You want to set your own password, default will be auto 128 characters generated")
     p.add_argument("-e", "--email", default=None, help="System Owners email address")
+    o.add_argument("-T", "--print-token", action = "store_true", help="Print your token on your screen")
     o.add_argument("--dry-run", action = "store_true", help="Dry-run this operation to just view the result that will be past to IssBot")
     a = p.parse_args()
     main()
