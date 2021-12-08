@@ -1,5 +1,6 @@
 ### Main Libraries ###
 import argparse
+import sys
 
 ### System Information Libraries ###
 import socket
@@ -9,7 +10,7 @@ import platform
 import os
 import json
 
-### IssBot Libraries ###
+### IssAssist Libraries ###
 import requests
 import keyring
 import string, random
@@ -22,7 +23,7 @@ log = logging.getLogger(__name__)
 class SystemInformation(object):
     """client_infoNonermation
     We will collect all information about your system that is nessecary
-    for IssBot to operate and collect valueble data for our Machine Learning
+    for IssAssist to operate and collect valueble data for our Machine Learning
     to operate as good as possible.
     """
 
@@ -59,28 +60,28 @@ class SystemInformation(object):
         except:
             pass
 
-class IssBot(object):
+class IssAssist(object):
     """
-    We will communicate and update or creating our instance at IssBot Agent.
+    We will communicate and update or creating our instance at IssAssist Agent.
     """
 
-    def __init__(self, issbot=None, credentials=None):
-        super(IssBot, self).__init__()
-        self.issbot = issbot
+    def __init__(self, issassist=None, credentials=None):
+        super(IssAssist, self).__init__()
+        self.issassist = issassist
         self.credentials = credentials
 
     def config(self):
         # This function help us to collect configuration.
         # It will read data from our config file.
 
-        if self.issbot:
-            if self.issbot == 'file':
+        if self.issassist:
+            if self.issassist == 'file':
                 with open('config.json') as json_data_file:
                     data = json.load(json_data_file)
             else:
                 with open('config.json') as json_data_file:
                     data = json.load(json_data_file)
-                data['url'] = self.issbot
+                data['url'] = self.issassist
         else:
             with open('config.json') as json_data_file:
                 data = json.load(json_data_file)
@@ -110,6 +111,10 @@ class IssBot(object):
             keyring.set_password(kwargs['service_name'], kwargs['hostname'], password)
         return(keyring.get_password(kwargs['service_name'], kwargs['hostname']))
 
+    def delete_credentials(self, *args, **kwargs):
+        # We are deleting all your credentials
+        return(keyring.delete_password(*args, **kwargs))
+
     def update_config(self, *args, **kwargs):
         # Update your configuration file
         with open('config.json', "r") as json_data_file:
@@ -124,7 +129,7 @@ class IssBot(object):
         return(True)
 
     def verify_token(self, config, *args, **kwargs):
-        # Check if your token is working and if it can access IssBot.
+        # Check if your token is working and if it can access IssAssist.
         log.info('Verifing your token...')
         url = config['url'] + '/api/auth/token/verify/'
         headers = {'Content-Type': 'application/json'}
@@ -196,7 +201,7 @@ class IssBot(object):
         else:
             email = kwargs['hostname'] + '@fakecompany.com'
 
-        # Register a new device on IssBot
+        # Register a new device on IssAssist
         response = self.obtain_token(self.config(),register=True, username=kwargs['hostname'], password1=credentials, password2=credentials, email=email)
         if response.status_code == 201:
             data = json.loads(response.text)
@@ -228,8 +233,8 @@ class IssBot(object):
         if response.status_code == 201:
             return response
         else:
-            log.error('Cannot create data at IssBot.')
-            raise Exception('Cannot create data at IssBot.')
+            log.error('Cannot create data at IssAssist.')
+            raise Exception('Cannot create data at IssAssist.')
 
     def print_token(self, *args, **kwargs):
         print('*' * 100)
@@ -465,6 +470,13 @@ def main():
     sys_info = SystemInformation()
     system_information = sys_info.client_information()
 
+    # Cleaning up all configuration.
+    if a.cleanup:
+        issassist = IssAssist()
+        issassist.delete_credentials('access_token', system_information['hostname'])
+        issassist.delete_credentials('refresh_token', system_information['hostname'])
+        sys.exit()
+
     # Identify your Package Manager
     if a.manager == 'auto':
         package_manager = sys_info.package_manager()
@@ -472,46 +484,46 @@ def main():
         package_manager = a.manager
 
     if not a.dry_run:
-        # Connect to IssBot to verify connection and registration status
-        log.info('Connecting to IssBot...')
-        if a.issbot_url:
-            issbot = IssBot(issbot=a.issbot_url)
+        # Connect to IssAssist to verify connection and registration status
+        log.info('Connecting to IssAssist...')
+        if a.issassist_url:
+            issassist = IssAssist(issassist=a.issassist_url)
         else:
-            issbot = IssBot()
-        if issbot.check_config(hostname=system_information['hostname']):
-            log.info('Successfully communicate with IssBot')
-            print('Success talking to IssBot')
+            issassist = IssAssist()
+        if issassist.check_config(hostname=system_information['hostname']):
+            log.info('Successfully communicate with IssAssist')
+            print('Success talking to IssAssist')
         else:
-            log.warning('Cannot connect to IssBot.')
+            log.warning('Cannot connect to IssAssist.')
             log.info('Try to register your device.')
-            print('Problem talking to IssBot')
+            print('Problem talking to IssAssist')
             if not a.password:
-                issbot.register(service_name='username_password',
+                issassist.register(service_name='username_password',
                                 hostname=system_information['hostname'],
                                 register=True)
             else:
-                issbot.register(service_name='username_password',
+                issassist.register(service_name='username_password',
                                 hostname=system_information['hostname'],
                                 password=a.password,
                                 register=True)
 
         # Check if the Device is registered
-        device_status = issbot.device_status(hostname=system_information['hostname'])
+        device_status = issassist.device_status(hostname=system_information['hostname'])
         if not device_status:
             # Device is not registered
-            log.info('Send Update Status to IssBot')
-            response = issbot.send_data(url_extra='api/v1/core',
+            log.info('Send Update Status to IssAssist')
+            response = issassist.send_data(url_extra='api/v1/core',
                                         **system_information)
             data = json.loads(response.text)
-            issbot.update_config(host_id=data['id'])
+            issassist.update_config(host_id=data['id'])
 
     # Collect your Update Status
     update = SystemUpdates(package_manager=package_manager)
     if not a.dry_run:
-        # Send Update Information to IssBot
+        # Send Update Information to IssAssist
         updates = update.get_update_packages()
-        isssys_config = issbot.config()
-        issbot.send_data(url_extra='api/v1/isssys',
+        isssys_config = issassist.config()
+        issassist.send_data(url_extra='api/v1/isssys',
                         **system_information,
                         **updates,
                         **isssys_config,
@@ -521,21 +533,23 @@ def main():
 
     if a.print_token:
         if a.dry_run:
-            issbot = IssBot()
+            issassist = issassist()
 
-        issbot.print_token(hostname=system_information['hostname'])
+        issassist.print_token(hostname=system_information['hostname'])
 
 if __name__ == '__main__':
     p = argparse.ArgumentParser(
-        description='''IssSys Agent for IssBot to collect System Updates information''',
+        description='''IssSys Agent for IssAssist to collect System Updates information''',
         epilog='''Contact support@isstech.io''',
         prog='python3 isssys.py'
     )
-    p.add_argument("-u", "--issbot-url", default='file', help = "URL to IssBot, default is to use the configuration file")
+    m = p.add_mutually_exclusive_group(required=False)
+    p.add_argument("-u", "--issassist-url", default='file', help = "URL to IssAssist, default is to use the configuration file")
     p.add_argument("-m", "--manager", default="auto", help="Force IssSys a specific Package Manager like 'apt' or 'yum'.")
     p.add_argument("-p", "--password", default=None, help="You want to set your own password, default will be auto 128 characters generated")
     p.add_argument("-e", "--email", default=None, help="System Owners email address")
     p.add_argument("-T", "--print-token", action = "store_true", help="Print your token on your screen")
-    p.add_argument("--dry-run", action = "store_true", help="Dry-run this operation to just view the result that will be past to IssBot")
+    m.add_argument("--dry-run", action = "store_true", help="Dry-run this operation to just view the result that will be past to IssAssist")
+    m.add_argument("--cleanup", action = "store_true", help="Clean up all credentials for IssSys")
     a = p.parse_args()
     main()
