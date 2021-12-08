@@ -41,3 +41,4 @@ Do you want to collect your Refresh Token and the last used Token you can allway
 Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the Apache-2.0 license, shall be dual licensed as per [LICENSE](https://github.com/IssTech/IssSys/blob/main/LICENSE), without any additional terms or conditions.
 
 Contributions to this project must be accompanied by a Contributor License Agreement. We use https://cla-assistant.io to automate this process.
+[![CLA assistant](https://cla-assistant.io/readme/badge/IssTech/IssSys)](https://cla-assistant.io/IssTech/IssSys)
