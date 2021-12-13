@@ -248,9 +248,10 @@ class SystemUpdates(object):
     In this class can you identify all system updates and process each update
     """
 
-    def __init__(self, package_manager=None):
+    def __init__(self, package_manager=None, dryrun=False):
         super(SystemUpdates, self).__init__()
         self.package_manager = package_manager
+        self.dryrun = dryrun
 
     def saveDistUpgrade(self,cache,depcache):
         """
@@ -370,50 +371,33 @@ class SystemUpdates(object):
         THIS IS NOT READY YET
         Return a list of tuple about package status
         """
+        # Loading DNF Modules and adding progress Meter
+        import dnf, dnf.cli.progress
+        progress = dnf.cli.progress.MultiFileProgressMeter()
+
         pkgs = []
-        apt_pkg.init()
+        # Connect to the DNF and load and update Repo metadata.
+        base = dnf.Base()
+        base.read_all_repos()
+        base.update_cache()
 
-        # force apt to build its caches in memory for now to make sure
-        # that there is no race when the pkgcache file gets re-generated
-        apt_pkg.config.set("Dir::Cache::pkgcache","")
-        try:
-            cache = apt_pkg.Cache(apt.progress.base.OpProgress())
-        except SystemError as e:
-            sys.stderr.write("Error: Opening the cache (%s)" % e)
-            sys.exit(-1)
-
-        # reading DepCache information and the pin file
-        # for any active sessions
-        depcache = apt_pkg.DepCache(cache)
-        depcache.read_pinfile()
-        if os.path.exists(ISSSYS_PINFILE):
-            depcache.read_pinfile(ISSSYS_PINFILE)
-
-        # Init DepCache
-        depcache.init()
-
-        try:
-            self.saveDistUpgrade(cache,depcache)
-        except SystemError as e:
-            sys.stderr.write("Error: Marking the upgrade (%s)" % e)
-            sys.exit(-1)
-
-        for pkg in cache.packages:
-            # Check if the package is already marked as install or upgraded
-            if not (depcache.marked_install(pkg) or depcache.marked_upgrade(pkg)):
-                continue
-            installed_ver = pkg.current_ver
-            candidate_ver = depcache.get_candidate_ver(pkg)
-            # Compare Candidate Version with the installed Version
-            if candidate_ver == installed_ver:
-                continue
-            record = {"name": pkg.name,
-                      "security": self.is_security_upgrade(pkg,depcache, DISTRO),
-                      "current_version": installed_ver.ver_str if installed_ver else '-',
-                      "candidate_version": candidate_ver.ver_str if candidate_ver else '-',
-                      #"priority": candidate_ver.priority_str}
-                      "priority": candidate_ver.priority}
-            pkgs.append(record)
+        # Index Installed and packages that can be upgraded.
+        base.fill_sack()
+        query = base.sack.query()
+        query_available = query.available()
+        query_installed = query.installed()
+        query_upgrades = query.upgrades()
+        for pkg_new in query_upgrades:
+            query_compare = query_installed.filter(name=pkg_new.name)
+            for pkg_old in query_compare:
+                record = {"name": pkg_new.name,
+                          #"security": self.is_security_upgrade(pkg,depcache, DISTRO),
+                          "security": False,
+                          "current_version": pkg_old.version,
+                          "candidate_version": pkg_new.version,
+                          #"priority": candidate_ver.priority_str}
+                          "priority": 3}
+                pkgs.append(record)
 
         if pkgs == None:
             print('pkgs is none')
@@ -432,7 +416,7 @@ class SystemUpdates(object):
         priority5 = 0
 
         for item in output:
-            if 'dryrun' in kwargs:
+            if self.dryrun:
                 print(item)
 
             total_count += 1
@@ -446,7 +430,7 @@ class SystemUpdates(object):
                 priority3 += 1
             elif item['priority'] == 4:
                 priority4 += 1
-            elif item['priority'] == 5:
+            else:
                 priority5 += 1
 
         list = {'total_updates': total_count,
@@ -456,7 +440,7 @@ class SystemUpdates(object):
                 'priority3_updates': priority3,
                 'priority4_updates': priority4,
                 'priority5_updates': priority5}
-        if 'dryrun' in kwargs:
+        if self.dryrun:
             print('*' * 150)
             print(list)
             print('*' * 150)
@@ -518,18 +502,16 @@ def main():
             issassist.update_config(host_id=data['id'])
 
     # Collect your Update Status
-    update = SystemUpdates(package_manager=package_manager)
+    update = SystemUpdates(package_manager=package_manager, dryrun=a.dry_run)
+    updates = update.get_update_packages()
     if not a.dry_run:
         # Send Update Information to IssAssist
-        updates = update.get_update_packages()
         isssys_config = issassist.config()
         issassist.send_data(url_extra='api/v1/isssys',
                         **system_information,
                         **updates,
                         **isssys_config,
                         isssys_version=isssys_config['version'])
-    else:
-        updates = update.get_update_packages(dryrun=True)
 
     if a.print_token:
         if a.dry_run:
