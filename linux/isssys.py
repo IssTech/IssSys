@@ -1,3 +1,5 @@
+#!/usr/bin/python3
+
 ### Main Libraries ###
 import argparse
 import sys
