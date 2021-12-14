@@ -264,7 +264,7 @@ class SystemUpdates(object):
             clean(cache,depcache)
         depcache.upgrade()
 
-    def is_security_upgrade(self, pkg, depcache, distro):
+    def apt_is_security_upgrade(self, pkg, depcache, distro):
 
         def is_security_upgrade_helper(ver):
             """
@@ -299,11 +299,13 @@ class SystemUpdates(object):
 
         return False
 
+    def dnf_is_security_upgrade(self, pkg)
+
     def get_update_packages(self, *args, **kwargs):
         if self.package_manager == 'apt':
             result = self.apt_get_update_packages(**kwargs)
         else:
-            result = self.yum_get_update_packages(**kwargs)
+            result = self.dnf_get_update_packages(**kwargs)
         return (result)
 
     def apt_get_update_packages(self, *args, **kwargs):
@@ -354,7 +356,7 @@ class SystemUpdates(object):
             if candidate_ver == installed_ver:
                 continue
             record = {"name": pkg.name,
-                      "security": self.is_security_upgrade(pkg,depcache,DISTRO),
+                      "security": self.apt_is_security_upgrade(pkg,depcache,DISTRO),
                       "current_version": installed_ver.ver_str if installed_ver else '-',
                       "candidate_version": candidate_ver.ver_str if candidate_ver else '-',
                       #"priority": candidate_ver.priority_str}
@@ -368,10 +370,10 @@ class SystemUpdates(object):
             package_count = self.package_count(pkgs, **kwargs)
             return package_count
 
-    def yum_get_update_packages(self, *args, **kwargs):
+    def dnf_get_update_packages(self, *args, **kwargs):
         """
-        THIS IS NOT READY YET
         Return a list of tuple about package status
+        Still don't support Security Updates and prioritis patches.
         """
         # Loading DNF Modules and adding progress Meter
         import dnf, dnf.cli.progress
@@ -386,6 +388,8 @@ class SystemUpdates(object):
         # Index Installed and packages that can be upgraded.
         base.fill_sack()
         query = base.sack.query()
+
+        # Query all available, installed and upgradble packages.
         query_available = query.available()
         query_installed = query.installed()
         query_upgrades = query.upgrades()
@@ -398,8 +402,11 @@ class SystemUpdates(object):
                           "current_version": pkg_old.version,
                           "candidate_version": pkg_new.version,
                           #"priority": candidate_ver.priority_str}
-                          "priority": 3}
+                          "priority": 5}
                 pkgs.append(record)
+
+        # Closing session for dnf.base
+        base.close()
 
         if pkgs == None:
             print('pkgs is none')
