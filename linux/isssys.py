@@ -3,10 +3,12 @@
 ### Main Libraries ###
 import argparse
 import sys
+import datetime
 
 ### System Information Libraries ###
 import socket
 import platform
+import importlib.util
 
 ### SystemUpdates Libraries ###
 import os
@@ -15,6 +17,7 @@ import json
 ### IssAssist Libraries ###
 import requests
 import keyring
+from keyrings.cryptfile.cryptfile import CryptFileKeyring
 import string, random
 # import json       # Is Used by SystemUpdates Libraries
 
@@ -29,9 +32,10 @@ class SystemInformation(object):
     to operate as good as possible.
     """
 
-    def __init__(self):
+    def __init__(self, name=None, test_ip='8.8.8.8'):
         super(SystemInformation, self).__init__()
-        self.name = None
+        self.name = name
+        self.connect_ip_address = test_ip
 
     def get_ip_address(self, connect="8.8.8.8"):
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
@@ -47,53 +51,101 @@ class SystemInformation(object):
         client['fqdn'] = socket.getfqdn()
         client['kernel'] = uname[2]
         client['operating_system'] = uname[3]
-        client['ipv4_address'] = self.get_ip_address(connect="8.8.8.8")
+        client['ipv4_address'] = self.get_ip_address(connect=self.connect_ip_address)
         return(client)
 
-    def package_manager(self):
-        try:
-            import apt, apt_pkg
-            import subprocess
-            ISSSYS_PINFILE = "/var/lib/isstech"
-            DISTRO = subprocess.check_output(["lsb_release", "-c", "-s"],
-                                             universal_newlines=True).strip()
-            log.info('Running Debian simular distribution, using apt')
-            return('apt')
-        except:
-            pass
+    def package_manager(self, pkm='auto'):
+        def load_apt():
+            try:
+                import apt
+                import apt_pkg
+                import subprocess
+                return(True)
+            except:
+                return (False)
+
+        def load_dnf():
+            try:
+                import dnf
+                import dnf.cli.progress
+                return(True)
+            except:
+                return (False)
+
+
+        def problem_loading_module(name='Package Manager'):
+            msg = 'No module named {}'.format(name)
+            log.error(msg)
+            raise ModuleNotFoundError(msg)
+
+        if pkm == 'auto':
+            # Test if we can load APT Modules
+            pkm_test = load_apt()
+            if pkm_test:
+                return('apt')
+            else:
+                # APT Module couldn't be loaded
+                # Test if we can load DNF Modules
+                pkm_test = load_dnf()
+
+            if pkm_test:
+                return('dnf')
+            else:
+                # None of the modules above could be loaded.
+                # Rasing an error we couldn't load anything
+                problem_loading_module()
+
+        elif pkm == 'dnf':
+            ## Force to load DNF Package Manager
+            load_dnf()
+            if not pkm_test:
+                # None of the modules above could be loaded.
+                # Rasing an error we couldn't load anything
+                problem_loading_module(name='DNF Package Manager')
+        elif pkm == 'apt':
+            ## Force to load APT Package Manager
+            load_apt()
+            if not pkm_test:
+                # None of the modules above could be loaded.
+                # Rasing an error we couldn't load anything
+                problem_loading_module(name='DNF Package Manager')
+        else:
+            # None of the modules above could be loaded.
+            # Rasing an error we couldn't load anything
+            problem_loading_module()
 
 class IssAssist(object):
     """
     We will communicate and update or creating our instance at IssAssist Agent.
     """
 
-    def __init__(self, issassist=None, credentials=None):
+    def __init__(self, credentials=None, *args, **kwargs):
         super(IssAssist, self).__init__()
-        self.issassist = issassist
+        self.config = Config()
+        self.settings = self.config.get_config(**kwargs)
         self.credentials = credentials
 
-    def config(self):
-        # This function help us to collect configuration.
-        # It will read data from our config file.
-
-        if self.issassist:
-            if self.issassist == 'file':
-                with open('config.json') as json_data_file:
-                    data = json.load(json_data_file)
-            else:
-                with open('config.json') as json_data_file:
-                    data = json.load(json_data_file)
-                data['url'] = self.issassist
-        else:
-            with open('config.json') as json_data_file:
-                data = json.load(json_data_file)
-        return(data)
+    def keyring_encode(self, *args, **kwargs):
+        import base64
+        text_string = kwargs['hostname']
+        base_text_string = text_string.encode('ascii')
+        encrypted_byte = base64.b64encode(base_text_string)
+        return (encrypted_byte.decode('ascii'))
 
     def id_generator(self, size=64, chars=string.ascii_uppercase + string.digits):
         # Auto Generate a string
         return ''.join(random.choice(chars) for _ in range(size))
 
     def get_credentials(self, *args, **kwargs):
+        '''
+        Create, Update and Read Password and Token from
+        Keyring Manager, will return the password or token.
+        '''
+
+        # Change Default Keyring manager.
+        CryptFileKeyring.keyring_key = self.keyring_encode(**kwargs)
+        keyring.set_keyring(CryptFileKeyring())
+
         # We will create/update and return our secret)
         if 'password' in kwargs:
             password = kwargs['password']
@@ -105,30 +157,20 @@ class IssAssist(object):
             password = self.id_generator(size=128)
 
         if 'register' in kwargs:
+            # Register a new password.
             log.warning('Register your credentials...')
             keyring.set_password(kwargs['service_name'], kwargs['hostname'], password)
 
         if 'update' in kwargs:
+            # Update a existing password
             log.warning('Update your credentials...')
             keyring.set_password(kwargs['service_name'], kwargs['hostname'], password)
+
         return(keyring.get_password(kwargs['service_name'], kwargs['hostname']))
 
     def delete_credentials(self, *args, **kwargs):
         # We are deleting all your credentials
         return(keyring.delete_password(*args, **kwargs))
-
-    def update_config(self, *args, **kwargs):
-        # Update your configuration file
-        with open('config.json', "r") as json_data_file:
-            data = json.load(json_data_file)
-
-        for key, value in kwargs.items():
-            data[key] = value
-
-        with open('config.json', "w") as json_data_file:
-            json.dump(data, json_data_file)
-
-        return(True)
 
     def verify_token(self, config, *args, **kwargs):
         # Check if your token is working and if it can access IssAssist.
@@ -170,24 +212,24 @@ class IssAssist(object):
         return(response)
 
     def check_config(self, *args, **kwargs):
-        config = self.config()
+        # Check if tokened is working
         access_token = self.get_credentials(service_name='access_token', **kwargs)
         refresh_token = self.get_credentials(service_name='refresh_token', **kwargs)
         if access_token:
-            if self.verify_token(config, token=access_token) == 200:
-                new_token = self.refresh_token(config, refresh=refresh_token, **kwargs)
+            if self.verify_token(self.settings, token=access_token) == 200:
+                new_token = self.refresh_token(self.settings, refresh=refresh_token, **kwargs)
                 return (True)
             else:
-                if self.verify_token(config, token=refresh_token) == 200:
-                    new_token = self.refresh_token(config, refresh=refresh_token, **kwargs)
+                if self.verify_token(self.settings, token=refresh_token) == 200:
+                    new_token = self.refresh_token(self.settings, refresh=refresh_token, **kwargs)
                     return (True)
                 else:
                     log.error('Token is invalid')
                     return (False)
 
         elif refresh_token:
-            if self.verify_token(config, token=refresh_token) == 200:
-                new_token = self.refresh_token(config, refresh=refresh_token, **kwargs)
+            if self.verify_token(self.settings, token=refresh_token) == 200:
+                new_token = self.refresh_token(self.settings, refresh=refresh_token, **kwargs)
                 return (True)
             else:
                 log.error('Token is invalid')
@@ -204,7 +246,7 @@ class IssAssist(object):
             email = kwargs['hostname'] + '@fakecompany.com'
 
         # Register a new device on IssAssist
-        response = self.obtain_token(self.config(),register=True, username=kwargs['hostname'], password1=credentials, password2=credentials, email=email)
+        response = self.obtain_token(self.config.get_config(),register=True, username=kwargs['hostname'], password1=credentials, password2=credentials, email=email)
         if response.status_code == 201:
             data = json.loads(response.text)
             return(True)
@@ -213,8 +255,9 @@ class IssAssist(object):
             raise Exception('Can not register your device. Get error code ' + str(response.status_code))
 
     def device_status(self, *args, **kwargs):
-        config = self.config()
-        url = '{}/{}/'.format(config['url'], 'api/v1/core')
+        # Check if the device is registered
+
+        url = '{}/{}/'.format(self.settings['url'], 'api/v1/core')
         credentials = self.get_credentials(service_name='access_token', **kwargs)
         headers = {'Content-Type': 'application/json',
                     'Authorization': 'Bearer ' + '{}'.format(credentials)}
@@ -226,8 +269,8 @@ class IssAssist(object):
             return False
 
     def send_data(self, *args, **kwargs):
-        config = self.config()
-        url = '{}/{}/'.format(config['url'], kwargs['url_extra'])
+        # Will send data to IssAssist Instance
+        url = '{}/{}/'.format(self.settings['url'], kwargs['url_extra'])
         credentials = self.get_credentials(service_name='access_token', **kwargs)
         headers = {'Content-Type': 'application/json',
                     'Authorization': 'Bearer ' + '{}'.format(credentials)}
@@ -299,7 +342,8 @@ class SystemUpdates(object):
 
         return False
 
-    def dnf_is_security_upgrade(self, pkg)
+    def dnf_is_security_upgrade(self, pkg):
+        pass
 
     def get_update_packages(self, *args, **kwargs):
         if self.package_manager == 'apt':
@@ -313,7 +357,10 @@ class SystemUpdates(object):
         Return a list of tuple about package status
         """
         log.info('Loading nessecary modules to continue...')
-        import apt, apt_pkg, subprocess
+        import apt
+        import apt_pkg
+        import subprocess
+
         ISSSYS_PINFILE = "/var/lib/isstech"
         DISTRO = subprocess.check_output(["lsb_release", "-c", "-s"],
                                          universal_newlines=True).strip()
@@ -376,7 +423,9 @@ class SystemUpdates(object):
         Still don't support Security Updates and prioritis patches.
         """
         # Loading DNF Modules and adding progress Meter
-        import dnf, dnf.cli.progress
+        import dnf
+        import dnf.cli.progress
+
         progress = dnf.cli.progress.MultiFileProgressMeter()
 
         pkgs = []
@@ -455,13 +504,116 @@ class SystemUpdates(object):
             print('*' * 150)
         return (list)
 
+class Config(object):
+    """
+    Configuration Class to update Global Configuration file
+    """
+
+    def __init__(self, file='config.json', *args, **kwargs):
+        super(Config, self).__init__()
+        self.filename = file
+
+    def get_config(self, *args, **kwargs):
+        with open(self.filename, "r") as json_data_file:
+            data = json.load(json_data_file)
+            if kwargs:
+                # Modify default settings
+                for key, value in kwargs.items():
+                    data[key] = value
+
+            return(data)
+
+    def update_config(self, *args, **kwargs):
+        # Get old configuration
+        # And modify the default configuration with the new configuration
+        data = self.get_config(**kwargs)
+
+        # Save the the config file
+        with open(self.filename, "w") as json_data_file:
+            json.dump(data, json_data_file)
+
+        return(True)
+
+def daemon_service():
+    import schedule
+    import time
+    now = datetime.datetime.now()
+    print('Starting service...')
+    log.info(str(now) + '  Running Daemon Mode...')
+    sleep_seconds = 900  ## Sleeping default time is 900 seconds / 15 min.
+    max_count = 4 ## Will sleep 4 times before it do another update check, 4 * 900 seconds is 3600 Seconds / 1 hours.
+    count = 5
+
+    ### Modify this section if you want to modify the
+    schedule.every(sleep_seconds*max_count).minutes.do(run_daemon_isssys)
+    #schedule.every(24).hour.do(isscontrol_client_upgrade)
+    #schedule.every().day.at("10:30").do(job)
+    #schedule.every(5).to(10).minutes.do(job)
+    #schedule.every().monday.do(job)
+    #schedule.every().wednesday.at("13:15").do(job)
+    #schedule.every().minute.at(":17").do(job)
+
+    while True:
+        if count > max_count:
+            count = 0
+        schedule.run_pending()
+        time.sleep(sleep_seconds)
+        count =+ 1
+    return()
+
+def run_daemon_isssys(*args, **kwargs):
+    now = datetime.datetime.now()
+    log.info(str(now) + ' Collect System Information')
+    print(str(now) + ' Collect System Information')
+    sys_info = SystemInformation()
+    system_information = sys_info.client_information()
+    log.info(str(now) + ' Collect Default Configuration')
+    print(str(now) + ' Collect Default Configuration')
+    config = Config()
+
+    log.info(str(now) + ' Verify Package Manager')
+    print(str(now) + ' Verify Package Manager')
+    package_manager = sys_info.package_manager()
+
+    log.info(str(now) + ' Connect to IssAssist')
+    print(str(now) + ' Connect to IssAssist')
+    issassist = IssAssist()
+    if issassist.check_config(hostname=system_information['hostname']):
+        print(str(now) + ' Successfully communicate with IssAssist')
+        log.info(str(now) + ' Successfully communicate with IssAssist')
+    else:
+        log.warning(str(now) + ' Cannot connect to IssAssist.')
+
+    log.info(str(now) + ' Collect System Update from your Package Manager')
+    print(str(now) + ' Collect System Update from your Package Manager')
+    update = SystemUpdates(package_manager=package_manager)
+    updates = update.get_update_packages()
+
+    log.info(str(now) + ' Send information to IssAssist')
+    print(str(now) + ' Send information to IssAssist')
+    isssys_config = config.get_config()
+    issassist.send_data(url_extra='api/v1/isssys',
+                    **system_information,
+                    **updates,
+                    **isssys_config,
+                    isssys_version=isssys_config['version'])
+
 def main():
+
     if a.dry_run:
-        log.info('Running in Dry-Mode... will not commucate outside this host')
+        log.info('Running in Dry-Mode... will not communicate outside this host')
 
     # Collect all your system information
     sys_info = SystemInformation()
     system_information = sys_info.client_information()
+    config = Config()
+
+    if a.daemon:
+        # This is only used for running IssSys as a background services.
+        # When you kill the service it will automatically stop here and do nothing else.
+
+        daemon_service()
+        sys.exit()
 
     # Cleaning up all configuration.
     if a.cleanup:
@@ -472,7 +624,7 @@ def main():
 
     # Identify your Package Manager
     if a.manager == 'auto':
-        package_manager = sys_info.package_manager()
+        package_manager = sys_info.package_manager(pkm=a.manager)
     else:
         package_manager = a.manager
 
@@ -480,7 +632,7 @@ def main():
         # Connect to IssAssist to verify connection and registration status
         log.info('Connecting to IssAssist...')
         if a.issassist_url:
-            issassist = IssAssist(issassist=a.issassist_url)
+            issassist = IssAssist(url=a.issassist_url)
         else:
             issassist = IssAssist()
         if issassist.check_config(hostname=system_information['hostname']):
@@ -504,18 +656,18 @@ def main():
         device_status = issassist.device_status(hostname=system_information['hostname'])
         if not device_status:
             # Device is not registered
-            log.info('Send Update Status to IssAssist')
+            log.warning('Register your device to IssAssist')
             response = issassist.send_data(url_extra='api/v1/core',
                                         **system_information)
             data = json.loads(response.text)
-            issassist.update_config(host_id=data['id'])
+            config.update_config(host_id=data['id'])
 
     # Collect your Update Status
     update = SystemUpdates(package_manager=package_manager, dryrun=a.dry_run)
     updates = update.get_update_packages()
     if not a.dry_run:
         # Send Update Information to IssAssist
-        isssys_config = issassist.config()
+        isssys_config = config.get_config()
         issassist.send_data(url_extra='api/v1/isssys',
                         **system_information,
                         **updates,
@@ -529,18 +681,21 @@ def main():
         issassist.print_token(hostname=system_information['hostname'])
 
 if __name__ == '__main__':
-    p = argparse.ArgumentParser(
+    parser = argparse.ArgumentParser(
         description='''IssSys Agent for IssAssist to collect System Updates information''',
         epilog='''Contact support@isstech.io''',
-        prog='python3 isssys.py'
+        prog='./isssys.py'
     )
-    m = p.add_mutually_exclusive_group(required=False)
-    p.add_argument("-u", "--issassist-url", default='file', help = "URL to IssAssist, default is to use the configuration file")
-    p.add_argument("-m", "--manager", default="auto", help="Force IssSys a specific Package Manager like 'apt' or 'yum'.")
-    p.add_argument("-p", "--password", default=None, help="You want to set your own password, default will be auto 128 characters generated")
-    p.add_argument("-e", "--email", default=None, help="System Owners email address")
-    p.add_argument("-T", "--print-token", action = "store_true", help="Print your token on your screen")
-    m.add_argument("--dry-run", action = "store_true", help="Dry-run this operation to just view the result that will be past to IssAssist")
-    m.add_argument("--cleanup", action = "store_true", help="Clean up all credentials for IssSys")
-    a = p.parse_args()
+    mutual = parser.add_mutually_exclusive_group(required=False)
+
+    parser.add_argument("-m", "--manager", default="auto", help="Force IssSys a specific Package Manager like 'apt' or 'yum'.")
+    parser.add_argument("-p", "--password", default=None, help="You want to set your own password, default will be auto 128 characters generated")
+    parser.add_argument("-e", "--email", default=None, help="System Owners email address")
+    parser.add_argument("-T", "--print-token", action = "store_true", help="Print your token on your screen")
+    parser.add_argument("-u", "--issassist-url", default=None, help = "URL to IssAssist, default is to use the configuration file")
+    mutual.add_argument("--dry-run", action = "store_true", help="Dry-run this operation to just view the result that will be past to IssAssist")
+    mutual.add_argument("--cleanup", action = "store_true", help="Clean up all credentials for IssSys")
+    mutual.add_argument("--daemon", action="store_true", help = "Run the script as a daemon")
+
+    a = parser.parse_args()
     main()

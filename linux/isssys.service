@@ -1,0 +1,18 @@
+[Unit]
+Description=IssTech IssSys Client
+StartLimitIntervalSec=0
+
+[Service]
+Type=idle
+Restart=always
+RestartSec=1
+IgnoreSIGPIPE=no
+StandardOutput=syslog
+StandardError=inherit
+User=root
+WorkingDirectory=/opt/IssTech/IssSys/linux/
+ExecStart=/opt/IssTech/IssSys/linux/isssys.py
+ExecReload=/bin/kill -SIGHUP $MAINPID
+
+[Install]
+Alias=isssys.service
