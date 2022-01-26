@@ -246,7 +246,7 @@ class IssAssist(object):
             email = kwargs['hostname'] + '@fakecompany.com'
 
         # Register a new device on IssAssist
-        response = self.obtain_token(self.config.get_config(),register=True, username=kwargs['hostname'], password1=credentials, password2=credentials, email=email)
+        response = self.obtain_token(self.settings, register=True, username=kwargs['hostname'], password1=credentials, password2=credentials, email=email)
         if response.status_code == 201:
             data = json.loads(response.text)
             return(True)
