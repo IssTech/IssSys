@@ -119,11 +119,12 @@ class IssAssist(object):
     We will communicate and update or creating our instance at IssAssist Agent.
     """
 
-    def __init__(self, credentials=None, *args, **kwargs):
+    def __init__(self, credentials=None, daemon=False, *args, **kwargs):
         super(IssAssist, self).__init__()
         self.config = Config()
         self.settings = self.config.get_config(**kwargs)
         self.credentials = credentials
+        self.daemon = daemon
 
     def keyring_encode(self, *args, **kwargs):
         import base64
@@ -177,12 +178,23 @@ class IssAssist(object):
         log.info('Verifing your token...')
         url = config['url'] + '/api/auth/token/verify/'
         headers = {'Content-Type': 'application/json'}
-        response = requests.post(url, headers=headers, json=kwargs)
-        if response.status_code == 200:
-            log.info('Token successfully verified')
+        if self.daemon:
+            try:
+                response = requests.post(url, headers=headers, json=kwargs)
+                if response.status_code == 200:
+                    log.info('Token successfully verified')
+                else:
+                    log.warning("Verify token failed with errorcode " + str(response.status_code))
+                return(response.status_code)
+            except:
+                return(503)
         else:
-            log.warning("Verify token failed with errorcode " + str(response.status_code))
-        return(response.status_code)
+            response = requests.post(url, headers=headers, json=kwargs)
+            if response.status_code == 200:
+                log.info('Token successfully verified')
+            else:
+                log.warning("Verify token failed with errorcode " + str(response.status_code))
+            return(response.status_code)
 
     def refresh_token(self, config, *args, **kwargs):
         # Refresh your Token
@@ -213,6 +225,7 @@ class IssAssist(object):
 
     def check_config(self, *args, **kwargs):
         # Check if tokened is working
+        now = datetime.datetime.now()
         access_token = self.get_credentials(service_name='access_token', **kwargs)
         refresh_token = self.get_credentials(service_name='refresh_token', **kwargs)
         if access_token:
@@ -224,7 +237,7 @@ class IssAssist(object):
                     new_token = self.refresh_token(self.settings, refresh=refresh_token, **kwargs)
                     return (True)
                 else:
-                    log.error('Token is invalid')
+                    log.error(str(now) + ' Token is invalid')
                     return (False)
 
         elif refresh_token:
@@ -232,10 +245,10 @@ class IssAssist(object):
                 new_token = self.refresh_token(self.settings, refresh=refresh_token, **kwargs)
                 return (True)
             else:
-                log.error('Token is invalid')
+                log.error(str(now) + ' Token is invalid')
                 return (False)
         else:
-            print('Token does not exist')
+            print(str(now) + ' Token does not exist')
             return(False)
 
     def register(self, *args, **kwargs):
@@ -540,12 +553,12 @@ def daemon_service():
     now = datetime.datetime.now()
     print('Starting service...')
     log.info(str(now) + '  Running Daemon Mode...')
-    sleep_seconds = 900  ## Sleeping default time is 900 seconds / 15 min.
+    sleep_seconds = 1  ## Sleeping default time is 900 seconds / 15 min.
     max_count = 4 ## Will sleep 4 times before it do another update check, 4 * 900 seconds is 3600 Seconds / 1 hours.
     count = 5
 
     ### Modify this section if you want to modify the
-    schedule.every(sleep_seconds*max_count).minutes.do(run_daemon_isssys)
+    schedule.every(sleep_seconds*max_count).minutes.do(run_daemon_isssys())
     #schedule.every(24).hour.do(isscontrol_client_upgrade)
     #schedule.every().day.at("10:30").do(job)
     #schedule.every(5).to(10).minutes.do(job)
@@ -577,12 +590,16 @@ def run_daemon_isssys(*args, **kwargs):
 
     log.info(str(now) + ' Connect to IssAssist')
     print(str(now) + ' Connect to IssAssist')
-    issassist = IssAssist()
+    issassist = IssAssist(daemon=True)
     if issassist.check_config(hostname=system_information['hostname']):
         print(str(now) + ' Successfully communicate with IssAssist')
         log.info(str(now) + ' Successfully communicate with IssAssist')
     else:
+        import time
         log.warning(str(now) + ' Cannot connect to IssAssist.')
+        print(str(now) + ' Will retry in 60 min...')
+        time.sleep(3600)
+        return(True)
 
     log.info(str(now) + ' Collect System Update from your Package Manager')
     print(str(now) + ' Collect System Update from your Package Manager')
@@ -597,6 +614,7 @@ def run_daemon_isssys(*args, **kwargs):
                     **updates,
                     **isssys_config,
                     isssys_version=isssys_config['version'])
+    return(True)
 
 def main():
 
