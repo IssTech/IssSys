@@ -11,7 +11,8 @@ StandardOutput=syslog
 StandardError=inherit
 User=root
 WorkingDirectory=/opt/IssTech/IssSys/linux/
-ExecStart=/opt/IssTech/IssSys/linux/isssys.py
+Environment="ARGS=--daemon"
+ExecStart=/opt/IssTech/IssSys/linux/isssys.py $ARGS
 ExecReload=/bin/kill -SIGHUP $MAINPID
 
 [Install]

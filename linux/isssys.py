@@ -553,13 +553,15 @@ def daemon_service():
     now = datetime.datetime.now()
     print('Starting service...')
     log.info(str(now) + '  Running Daemon Mode...')
-    sleep_seconds = 1  ## Sleeping default time is 900 seconds / 15 min.
-    max_count = 4 ## Will sleep 4 times before it do another update check, 4 * 900 seconds is 3600 Seconds / 1 hours.
-    count = 5
+    ## How oftent do you want to run the check in min.
+    sleep_time = 360
+    ## 60 is 1 hour
+    ## 360 seconds is 6 hours
+    ## 1440 seconds is 24 hours
 
     ### Modify this section if you want to modify the
-    schedule.every(sleep_seconds*max_count).minutes.do(run_daemon_isssys())
-    #schedule.every(24).hour.do(isscontrol_client_upgrade)
+    schedule.every(sleep_time).minutes.do(run_daemon_isssys)
+    #schedule.every(6).hour.do(run_daemon_isssys())
     #schedule.every().day.at("10:30").do(job)
     #schedule.every(5).to(10).minutes.do(job)
     #schedule.every().monday.do(job)
@@ -567,14 +569,11 @@ def daemon_service():
     #schedule.every().minute.at(":17").do(job)
 
     while True:
-        if count > max_count:
-            count = 0
         schedule.run_pending()
-        time.sleep(sleep_seconds)
-        count =+ 1
+        time.sleep(sleep_time)
     return()
 
-def run_daemon_isssys(*args, **kwargs):
+def run_daemon_isssys():
     now = datetime.datetime.now()
     log.info(str(now) + ' Collect System Information')
     print(str(now) + ' Collect System Information')
